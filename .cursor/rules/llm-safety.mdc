@@ -1,0 +1,44 @@
+---
+description: Safe LLM/Retell parsing and resilient external API calls
+alwaysApply: true
+---
+
+# LLM Safety & External API Resilience
+
+## Markdown Fence Stripping (mandatory)
+
+ALWAYS strip markdown code fences before `JSON.parse` on any LLM or Retell response:
+
+```typescript
+// ✅ GOOD
+import { safeJsonParse } from "@/lib/safe-json-parse";
+const data = safeJsonParse<CallSummary>(rawResponse);
+
+// ❌ BAD — Retell/LLMs often wrap JSON in ```json ... ```
+const data = JSON.parse(rawResponse);
+```
+
+Use a shared `safeJsonParse` utility (copied from SmartDesk Dental). Never parse LLM output inline without fence stripping.
+
+## External API Calls
+
+Wrap all calls to Retell, SignalWire, Google Calendar, Stripe, and other third-party APIs in try/catch with **typed errors**:
+
+```typescript
+class RetellApiError extends Error {
+  constructor(message: string, public readonly statusCode?: number, public readonly cause?: unknown) {
+    super(message);
+    this.name = "RetellApiError";
+  }
+}
+```
+
+## Retry Logic
+
+- Transient failures (5xx, network timeout, rate limit 429): retry with exponential backoff (max 3 attempts).
+- Client errors (4xx except 429): do not retry; surface typed error to caller.
+- Log each retry with context (businessId, callId, endpoint) — never log secrets.
+
+## Post-Call Webhooks
+
+Retell post-call payloads may include nested JSON strings. Parse defensively: strip fences, validate with Zod, default missing fields rather than crashing the webhook handler.

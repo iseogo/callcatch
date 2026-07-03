@@ -1,0 +1,42 @@
+---
+description: SMS conversation state — persist and load per business + caller
+alwaysApply: true
+---
+
+# SMS Conversation State
+
+SMS is the owner's primary interface. Conversation history MUST persist and be loaded before every reply turn.
+
+## Keying
+
+Threads are keyed by `(businessId, callerPhone)` — one `SmsThread` per pair. Normalize phone numbers to E.164 before lookup/storage.
+
+## Load-Before-Reply (mandatory)
+
+Every inbound SMS handler and every outbound reply generator MUST:
+
+1. Load existing `SmsThread` for `(businessId, callerPhone)`.
+2. Append the new message to history.
+3. Pass full history to the reply logic (LLM or template).
+4. Persist the assistant reply before returning.
+
+```typescript
+// ✅ GOOD
+const thread = await getOrCreateSmsThread(businessId, callerPhone);
+const history = thread.messages;
+const reply = await generateReply(history, inboundText);
+await appendMessage(thread.id, { role: "assistant", content: reply });
+
+// ❌ BAD — stateless single-turn reply
+const reply = await generateReply(inboundText);
+```
+
+## Model
+
+Use the `SmsThread` model from `CALLCATCH_SPEC.md` (copied from SmartDesk Dental engine). Do not store conversation state in memory, cookies, or ephemeral cache without DB persistence.
+
+## Use Cases
+
+- Customer booking confirmations and follow-ups
+- Owner notifications (may be one-way; still log outbound messages on a thread when tied to a caller)
+- Post-call SMS summaries to owner referencing the caller's number

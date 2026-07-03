@@ -1,0 +1,50 @@
+---
+description: CallCatch core coding conventions — TypeScript, validation, env
+alwaysApply: true
+---
+
+# Project Conventions
+
+Stack: Next.js 14 App Router, strict TypeScript, Prisma + PostgreSQL (Supabase), Tailwind + shadcn/ui.
+
+## TypeScript
+
+- `strict` mode is non-negotiable. No `any`. Use `unknown` + narrowing when type is uncertain.
+- Prefer explicit return types on exported functions and API handlers.
+- Use Prisma-generated types for DB models; extend with Zod schemas at API boundaries.
+
+## API Routes
+
+Every `app/api/**/route.ts` handler MUST validate input with Zod before any business logic:
+
+```typescript
+// ✅ GOOD
+const body = CreateBusinessSchema.parse(await request.json());
+
+// ❌ BAD — untyped destructuring
+const { name, ownerPhone } = await request.json();
+```
+
+- Return typed JSON responses; use consistent error shapes (`{ error: string, code?: string }`).
+- Validate query params and route params with Zod, not manual checks.
+
+## Environment Variables
+
+All env vars live in a single `src/env.ts` (or `lib/env.ts`) using `@t3-oss/env-nextjs` or equivalent:
+
+```typescript
+// ✅ GOOD — typed, validated at startup
+export const env = createEnv({
+  server: { RETELL_API_KEY: z.string().min(1), ... },
+  client: { ... },
+});
+
+// ❌ BAD — scattered process.env access
+const key = process.env.RETELL_API_KEY;
+```
+
+Never read `process.env` directly outside `env.ts`.
+
+## Scope
+
+Follow `CALLCATCH_SPEC.md` as the single source of truth. Do not add features listed under non-goals v1 without explicit approval.

@@ -1,0 +1,124 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Trade {
+  PLUMBING
+  HVAC
+  ELECTRICAL
+  OTHER
+}
+
+enum CalType {
+  GOOGLE
+  JOBBER
+  HOUSECALL_PRO
+}
+
+enum Status {
+  TRIAL
+  ACTIVE
+  PAUSED
+}
+
+enum Intent {
+  EMERGENCY
+  SERVICE_REQUEST
+  QUOTE
+  RESCHEDULE
+  OTHER
+}
+
+enum Outcome {
+  BOOKED
+  TRANSFERRED
+  MESSAGE_TAKEN
+  MISSED_INFO
+}
+
+model Business {
+  id               String    @id @default(cuid())
+  name             String
+  ownerPhone       String
+  onCallPhone      String?
+  trade            Trade
+  timezone         String
+  businessHours    Json
+  serviceArea      Json
+  services         Json
+  phoneNumber      String?
+  retellAgentId    String?
+  calendarType     CalType
+  calendarConfig   Json
+  status           Status    @default(TRIAL)
+  stripeCustomerId String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  calls      Call[]
+  bookings   Booking[]
+  smsThreads SmsThread[]
+
+  @@index([status])
+}
+
+model Call {
+  id               String    @id @default(cuid())
+  businessId       String
+  business         Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  callerPhone      String
+  startedAt        DateTime
+  durationSec      Int?
+  intent           Intent?
+  outcome          Outcome?
+  transcript       String?   @db.Text
+  summary          String?   @db.Text
+  jobValueEstimate Float?
+  retellCallId     String?   @unique
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  bookings Booking[]
+
+  @@index([businessId])
+  @@index([businessId, startedAt])
+  @@index([callerPhone])
+}
+
+model Booking {
+  id            String   @id @default(cuid())
+  businessId    String
+  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  callId        String?
+  call          Call?    @relation(fields: [callId], references: [id], onDelete: SetNull)
+  customerName  String
+  customerPhone String
+  address       String
+  issue         String
+  scheduledAt   DateTime
+  confirmed     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([businessId])
+  @@index([businessId, scheduledAt])
+  @@index([callId])
+}
+
+model SmsThread {
+  id          String   @id @default(cuid())
+  businessId  String
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  callerPhone String
+  messages    Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([businessId, callerPhone])
+  @@index([businessId])
+}
