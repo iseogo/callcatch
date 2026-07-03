@@ -3,11 +3,31 @@ import { prisma } from "@/lib/prisma";
 import { normalizePhone } from "@/lib/phone";
 import { getErrorMessage } from "@/lib/errors";
 import { recordInboundSms } from "@/lib/sms";
-import { buildSmsReplyLaml } from "@/lib/signalwire";
+import {
+  buildSmsReplyLaml,
+  verifySignalWireWebhook,
+} from "@/lib/signalwire";
 
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
+    const params = Object.fromEntries(
+      Array.from(formData.entries(), ([key, value]) => [
+        key,
+        value.toString(),
+      ]),
+    );
+
+    if (
+      !verifySignalWireWebhook(
+        request.url,
+        request.headers.get("x-signalwire-signature"),
+        params,
+      )
+    ) {
+      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+    }
+
     const from = formData.get("From")?.toString();
     const to = formData.get("To")?.toString();
     const body = formData.get("Body")?.toString() ?? "";

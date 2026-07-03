@@ -21,6 +21,8 @@ export const env = createEnv({
     SIGNALWIRE_PROJECT_ID: z.string().min(1).optional(),
     SIGNALWIRE_API_TOKEN: z.string().min(1).optional(),
     SIGNALWIRE_SPACE_URL: z.string().url().optional(),
+    SIGNALWIRE_SIGNING_KEY: z.string().min(1).optional(),
+    SIGNALWIRE_PHONE_NUMBER_ID: z.string().min(1).optional(),
 
     // SignalWire SIP trunk for Retell import-phone-number
     SIGNALWIRE_SIP_TERMINATION_URI: z.string().min(1).optional(),
@@ -34,6 +36,7 @@ export const env = createEnv({
 
     // Protect provisioning + dev simulation endpoints
     PROVISIONING_SECRET: z.string().min(1).optional(),
+    DASHBOARD_PASSWORD: z.string().min(12).optional(),
   },
   client: {
     NEXT_PUBLIC_APP_URL: z.string().url(),
@@ -46,6 +49,8 @@ export const env = createEnv({
     SIGNALWIRE_PROJECT_ID: process.env.SIGNALWIRE_PROJECT_ID,
     SIGNALWIRE_API_TOKEN: process.env.SIGNALWIRE_API_TOKEN,
     SIGNALWIRE_SPACE_URL: process.env.SIGNALWIRE_SPACE_URL,
+    SIGNALWIRE_SIGNING_KEY: process.env.SIGNALWIRE_SIGNING_KEY,
+    SIGNALWIRE_PHONE_NUMBER_ID: process.env.SIGNALWIRE_PHONE_NUMBER_ID,
     SIGNALWIRE_SIP_TERMINATION_URI: process.env.SIGNALWIRE_SIP_TERMINATION_URI,
     SIGNALWIRE_SIP_USERNAME: process.env.SIGNALWIRE_SIP_USERNAME,
     SIGNALWIRE_SIP_PASSWORD: process.env.SIGNALWIRE_SIP_PASSWORD,
@@ -53,6 +58,7 @@ export const env = createEnv({
     GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
     GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI,
     PROVISIONING_SECRET: process.env.PROVISIONING_SECRET,
+    DASHBOARD_PASSWORD: process.env.DASHBOARD_PASSWORD,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
   },
   skipValidation: process.env.SKIP_ENV_VALIDATION === "true",
@@ -75,6 +81,7 @@ export function requireLiveCredentials(
     if (!env.SIGNALWIRE_PROJECT_ID) missing.push("SIGNALWIRE_PROJECT_ID");
     if (!env.SIGNALWIRE_API_TOKEN) missing.push("SIGNALWIRE_API_TOKEN");
     if (!env.SIGNALWIRE_SPACE_URL) missing.push("SIGNALWIRE_SPACE_URL");
+    if (!env.SIGNALWIRE_SIGNING_KEY) missing.push("SIGNALWIRE_SIGNING_KEY");
   }
 
   if (service === "google") {

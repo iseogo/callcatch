@@ -4,10 +4,16 @@ import {
   getCalendarSlots,
 } from "@/lib/booking";
 import { getErrorMessage } from "@/lib/errors";
+import { parseVerifiedRetellBody } from "@/lib/request-auth";
 
 export async function POST(request: Request) {
   try {
-    const body = CalendarSlotsSchema.parse(await request.json());
+    const rawBody = await request.text();
+    const input = parseVerifiedRetellBody<unknown>(
+      rawBody,
+      request.headers.get("x-retell-signature"),
+    );
+    const body = CalendarSlotsSchema.parse(input);
     const result = await getCalendarSlots(body);
     return NextResponse.json(result);
   } catch (error) {

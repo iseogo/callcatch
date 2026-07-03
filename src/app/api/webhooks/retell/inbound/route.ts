@@ -8,6 +8,7 @@ import {
   renderTradesAgentPrompt,
 } from "@/packs/trades-agent";
 import type { BusinessHours, Service, ServiceArea } from "@/lib/business-schemas";
+import { parseVerifiedRetellBody } from "@/lib/request-auth";
 
 interface InboundWebhookPayload {
   event?: string;
@@ -39,7 +40,11 @@ function formatServices(services: Service[]): string {
 
 export async function POST(request: Request) {
   try {
-    const payload = (await request.json()) as InboundWebhookPayload;
+    const rawBody = await request.text();
+    const payload = parseVerifiedRetellBody<InboundWebhookPayload>(
+      rawBody,
+      request.headers.get("x-retell-signature"),
+    );
     const toNumber = payload.to_number
       ? normalizePhone(payload.to_number)
       : null;
