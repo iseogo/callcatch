@@ -92,6 +92,20 @@ export interface RetellPhoneNumberResponse {
   inbound_agent_id?: string;
 }
 
+export interface RegisterRetellPhoneCallInput {
+  agent_id: string;
+  from_number: string;
+  to_number: string;
+  direction: "inbound" | "outbound";
+  metadata?: Record<string, string>;
+}
+
+export interface RegisterRetellPhoneCallResponse {
+  call_id: string;
+  agent_id: string;
+  call_status: string;
+}
+
 async function retellFetch<T>(
   path: string,
   init?: RequestInit,
@@ -124,6 +138,18 @@ async function retellFetch<T>(
   }
 
   return (await response.json()) as T;
+}
+
+export async function registerRetellPhoneCall(
+  input: RegisterRetellPhoneCallInput,
+): Promise<RegisterRetellPhoneCallResponse> {
+  return retellFetch<RegisterRetellPhoneCallResponse>(
+    "/v2/register-phone-call",
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
 }
 
 function mockId(prefix: string): string {

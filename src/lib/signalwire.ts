@@ -329,8 +329,8 @@ export function buildTransferLaml(transferTo: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?><Response><Dial>${escaped}</Dial></Response>`;
 }
 
-export function buildRetellInboundLaml(phoneNumber: string): string {
-  const normalized = phoneNumber.replace(/[^\d+]/g, "");
-  const destination = `sip:${normalized}@sip.retellai.com;transport=tcp`;
+export function buildRetellInboundLaml(callId: string): string {
+  const safeCallId = callId.replace(/[^a-zA-Z0-9_-]/g, "");
+  const destination = `sip:${safeCallId}@sip.retellai.com;transport=tcp`;
   return `<?xml version="1.0" encoding="UTF-8"?><Response><Dial><Sip>${destination}</Sip></Dial></Response>`;
 }

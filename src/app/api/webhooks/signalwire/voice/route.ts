@@ -4,6 +4,7 @@ import {
   buildRetellInboundLaml,
   verifySignalWireWebhook,
 } from "@/lib/signalwire";
+import { registerRetellPhoneCall } from "@/lib/retell";
 
 export async function POST(request: Request) {
   const rawBody = await request.text();
@@ -26,15 +27,33 @@ export async function POST(request: Request) {
 
   const business = await prisma.business.findFirst({
     where: { phoneNumber: calledNumber },
-    select: { phoneNumber: true, status: true },
+    select: { id: true, phoneNumber: true, retellAgentId: true, status: true },
   });
 
   if (!business || business.status !== "ACTIVE") {
     return NextResponse.json({ error: "Number is not active" }, { status: 404 });
   }
 
+  if (!business.retellAgentId) {
+    return NextResponse.json(
+      { error: "Number has no Retell agent" },
+      { status: 503 },
+    );
+  }
+
+  const registeredCall = await registerRetellPhoneCall({
+    agent_id: business.retellAgentId,
+    from_number: params.From ?? "unknown",
+    to_number: business.phoneNumber ?? calledNumber,
+    direction: "inbound",
+    metadata: {
+      businessId: business.id,
+      signalwireCallSid: params.CallSid ?? "",
+    },
+  });
+
   return new NextResponse(
-    buildRetellInboundLaml(business.phoneNumber ?? calledNumber),
+    buildRetellInboundLaml(registeredCall.call_id),
     {
     status: 200,
     headers: { "Content-Type": "text/xml; charset=utf-8" },
