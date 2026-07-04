@@ -164,6 +164,16 @@ export async function updateRetellLlm(
   });
 }
 
+export async function deleteRetellLlm(llmId: string): Promise<void> {
+  if (env.MOCK_MODE) {
+    return;
+  }
+
+  await retellFetch(`/delete-retell-llm/${llmId}`, {
+    method: "DELETE",
+  });
+}
+
 export async function createRetellAgent(
   input: CreateRetellAgentInput,
 ): Promise<RetellAgentResponse> {
@@ -188,6 +198,16 @@ export async function createRetellAgent(
         "call_analyzed",
       ],
     }),
+  });
+}
+
+export async function deleteRetellAgent(agentId: string): Promise<void> {
+  if (env.MOCK_MODE) {
+    return;
+  }
+
+  await retellFetch(`/delete-agent/${agentId}`, {
+    method: "DELETE",
   });
 }
 

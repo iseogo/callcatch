@@ -10,6 +10,8 @@ import { RetellApiError } from "@/lib/errors";
 import {
   createRetellAgent,
   createRetellLlm,
+  deleteRetellAgent,
+  deleteRetellLlm,
   importRetellPhoneNumber,
   updateRetellPhoneNumber,
 } from "@/lib/retell";
@@ -49,6 +51,14 @@ function formatServices(services: CreateBusinessInput["services"]): string {
       return `${s.name} (${s.durationMin} min)${price}`;
     })
     .join("; ");
+}
+
+function normalizeTerminationUri(value: string): string {
+  const withoutScheme = value.replace(/^sips?:\/\//i, "");
+  const withoutUser = withoutScheme.includes("@")
+    ? withoutScheme.slice(withoutScheme.lastIndexOf("@") + 1)
+    : withoutScheme;
+  return withoutUser.split(/[;/]/, 1)[0] ?? withoutUser;
 }
 
 function buildRetellTools(
@@ -210,6 +220,7 @@ export async function provisionBusiness(input: CreateBusinessInput) {
       });
 
   await updatePhoneNumber(purchased.id, {
+    name: business.name,
     message_handler: "laml_webhooks",
     message_request_url: `${appUrl}/api/webhooks/signalwire/sms`,
     message_request_method: "POST",
@@ -303,52 +314,67 @@ export async function activateBusinessLive(
     webhook_events: ["call_started", "call_ended", "call_analyzed"],
   });
 
-  const phoneConfig = {
-    phone_number: business.phoneNumber,
-    termination_uri:
-      env.SIGNALWIRE_SIP_TERMINATION_URI ??
-      (() => {
-        throw new Error("SIGNALWIRE_SIP_TERMINATION_URI is required");
-      })(),
-    sip_trunk_auth_username: env.SIGNALWIRE_SIP_USERNAME,
-    sip_trunk_auth_password: env.SIGNALWIRE_SIP_PASSWORD,
-    inbound_agents: [{ agent_id: agent.agent_id, weight: 1 }],
-    inbound_webhook_url: `${appUrl}/api/webhooks/retell/inbound`,
-  };
-
   try {
-    await importRetellPhoneNumber(phoneConfig);
-  } catch (error) {
-    if (!(error instanceof RetellApiError) || error.statusCode !== 409) {
-      throw error;
+    const terminationUri = env.SIGNALWIRE_SIP_TERMINATION_URI;
+    if (!terminationUri) {
+      throw new Error("SIGNALWIRE_SIP_TERMINATION_URI is required");
     }
-    const { phone_number: _phoneNumber, ...phoneUpdate } = phoneConfig;
-    await updateRetellPhoneNumber(business.phoneNumber, phoneUpdate);
+
+    const phoneConfig = {
+      phone_number: business.phoneNumber,
+      termination_uri: normalizeTerminationUri(terminationUri),
+      sip_trunk_auth_username: env.SIGNALWIRE_SIP_USERNAME,
+      sip_trunk_auth_password: env.SIGNALWIRE_SIP_PASSWORD,
+      inbound_agents: [{ agent_id: agent.agent_id, weight: 1 }],
+      inbound_webhook_url: `${appUrl}/api/webhooks/retell/inbound`,
+    };
+
+    try {
+      await importRetellPhoneNumber(phoneConfig);
+    } catch (error) {
+      const phoneAlreadyExists =
+        error instanceof RetellApiError &&
+        (error.statusCode === 409 ||
+          (error.statusCode === 400 &&
+            error.message.includes("Phone number already exists")));
+      if (!phoneAlreadyExists) {
+        throw error;
+      }
+      const { phone_number: _phoneNumber, ...phoneUpdate } = phoneConfig;
+      await updateRetellPhoneNumber(business.phoneNumber, phoneUpdate);
+    }
+
+    await updatePhoneNumber(env.SIGNALWIRE_PHONE_NUMBER_ID, {
+      name: business.name,
+      call_handler: "laml_webhooks",
+      call_request_url: `${appUrl}/api/webhooks/signalwire/voice`,
+      call_request_method: "POST",
+      message_handler: "laml_webhooks",
+      message_request_url: `${appUrl}/api/webhooks/signalwire/sms`,
+      message_request_method: "POST",
+    });
+
+    const updated = await prisma.business.update({
+      where: { id: business.id },
+      data: {
+        retellAgentId: agent.agent_id,
+        status: "ACTIVE",
+      },
+    });
+
+    return {
+      business: updated,
+      retell: { llmId: llm.llm_id, agentId: agent.agent_id },
+      signalwire: {
+        phoneNumberId: env.SIGNALWIRE_PHONE_NUMBER_ID,
+        phoneNumber: business.phoneNumber,
+      },
+    };
+  } catch (error) {
+    await Promise.allSettled([
+      deleteRetellAgent(agent.agent_id),
+      deleteRetellLlm(llm.llm_id),
+    ]);
+    throw error;
   }
-
-  await updatePhoneNumber(env.SIGNALWIRE_PHONE_NUMBER_ID, {
-    call_handler: "laml_webhooks",
-    call_request_url: `${appUrl}/api/webhooks/signalwire/voice`,
-    call_request_method: "POST",
-    message_handler: "laml_webhooks",
-    message_request_url: `${appUrl}/api/webhooks/signalwire/sms`,
-    message_request_method: "POST",
-  });
-
-  const updated = await prisma.business.update({
-    where: { id: business.id },
-    data: {
-      retellAgentId: agent.agent_id,
-      status: "ACTIVE",
-    },
-  });
-
-  return {
-    business: updated,
-    retell: { llmId: llm.llm_id, agentId: agent.agent_id },
-    signalwire: {
-      phoneNumberId: env.SIGNALWIRE_PHONE_NUMBER_ID,
-      phoneNumber: business.phoneNumber,
-    },
-  };
 }

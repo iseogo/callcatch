@@ -15,6 +15,7 @@ export interface PurchasePhoneNumberInput {
 }
 
 export interface UpdatePhoneNumberInput {
+  name: string;
   call_handler?: "laml_webhooks" | "relay_context";
   call_request_url?: string;
   call_request_method?: "GET" | "POST";
