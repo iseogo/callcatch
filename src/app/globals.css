@@ -11,9 +11,7 @@
 }
 
 body {
-  background:
-    radial-gradient(circle at 15% 0%, rgb(30 41 59 / 0.72), transparent 36rem),
-    #020617;
+  background: #070b14;
 }
 
 ::selection {
