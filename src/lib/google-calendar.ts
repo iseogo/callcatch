@@ -1,6 +1,9 @@
 import type { Business, Intent, Outcome } from "@prisma/client";
 import { env, requireLiveCredentials } from "@/env";
-import { GoogleCalendarConfigSchema } from "@/lib/business-schemas";
+import {
+  BusinessHoursSchema,
+  GoogleCalendarConfigSchema,
+} from "@/lib/business-schemas";
 import { GoogleCalendarError } from "@/lib/errors";
 import { withRetry } from "@/lib/retry";
 
@@ -92,6 +95,37 @@ function addMinutes(iso: string, minutes: number): string {
   return new Date(new Date(iso).getTime() + minutes * 60_000).toISOString();
 }
 
+const WEEKDAY_KEYS: Record<string, string> = {
+  Mon: "mon",
+  Tue: "tue",
+  Wed: "wed",
+  Thu: "thu",
+  Fri: "fri",
+  Sat: "sat",
+  Sun: "sun",
+};
+
+function getLocalSchedulePosition(date: Date, timezone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return {
+    day: WEEKDAY_KEYS[values.weekday ?? ""] ?? "",
+    minuteOfDay:
+      Number(values.hour ?? "0") * 60 + Number(values.minute ?? "0"),
+  };
+}
+
+function parseTimeToMinutes(value: string): number {
+  const [hour = "0", minute = "0"] = value.split(":");
+  return Number(hour) * 60 + Number(minute);
+}
+
 function generateMockSlots(
   timeMin: string,
   timeMax: string,
@@ -137,6 +171,7 @@ export async function getAvailableSlots(
   }
 
   const config = parseCalendarConfig(business);
+  const businessHours = BusinessHoursSchema.parse(business.businessHours);
   const accessToken = await getAccessToken(config);
 
   const response = await withRetry(async () => {
@@ -174,15 +209,28 @@ export async function getAvailableSlots(
 
   while (cursor < end && slots.length < 6) {
     const slotStart = cursor.toISOString();
-    const slotEnd = addMinutes(slotStart, totalDurationMin);
+    const appointmentEnd = addMinutes(slotStart, options.durationMin);
+    const blockedEnd = addMinutes(slotStart, totalDurationMin);
+    const local = getLocalSchedulePosition(cursor, business.timezone);
+    const hours = businessHours[local.day];
+
+    if (!hours) {
+      cursor = new Date(cursor.getTime() + 30 * 60_000);
+      continue;
+    }
+
+    const opensAt = parseTimeToMinutes(hours[0]);
+    const closesAt = parseTimeToMinutes(hours[1]);
+    const fitsBusinessHours =
+      local.minuteOfDay >= opensAt &&
+      local.minuteOfDay + totalDurationMin <= closesAt;
 
     const overlaps = busy.some(
-      (b) => new Date(b.start) < new Date(slotEnd) && new Date(b.end) > cursor,
+      (b) => new Date(b.start) < new Date(blockedEnd) && new Date(b.end) > cursor,
     );
 
-    const hour = cursor.getHours();
-    if (!overlaps && hour >= 8 && hour < 17) {
-      slots.push({ start: slotStart, end: slotEnd });
+    if (fitsBusinessHours && !overlaps) {
+      slots.push({ start: slotStart, end: appointmentEnd });
     }
 
     cursor = new Date(cursor.getTime() + 30 * 60_000);
@@ -240,6 +288,38 @@ export async function createCalendarEvent(
 
   const data = (await response.json()) as EventInsertResponse;
   return { eventId: data.id, htmlLink: data.htmlLink };
+}
+
+export async function deleteCalendarEvent(
+  business: Business,
+  eventId: string,
+): Promise<void> {
+  if (env.MOCK_MODE) {
+    return;
+  }
+
+  const config = parseCalendarConfig(business);
+  const accessToken = await getAccessToken(config);
+
+  await withRetry(async () => {
+    const res = await fetch(
+      `${GOOGLE_CALENDAR_BASE}/calendars/${encodeURIComponent(config.calendarId)}/events/${encodeURIComponent(eventId)}`,
+      {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      },
+    );
+
+    if (!res.ok && res.status !== 404) {
+      const text = await res.text();
+      throw new GoogleCalendarError(
+        `Google event delete failed: ${res.status} ${text}`,
+        res.status,
+      );
+    }
+
+    return res;
+  });
 }
 
 export function formatSlotForSms(slot: TimeSlot, timezone: string): string {

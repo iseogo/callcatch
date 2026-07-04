@@ -2,6 +2,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import {
   createCalendarEvent,
+  deleteCalendarEvent,
   formatSlotForSms,
   getAvailableSlots,
 } from "@/lib/google-calendar";
@@ -61,6 +62,16 @@ export async function bookCalendarAppointment(
   const durationMin =
     input.durationMin ?? services[0]?.durationMin ?? 60;
 
+  const linkedCall = input.callId
+    ? await prisma.call.findFirst({
+        where: {
+          businessId: business.id,
+          OR: [{ id: input.callId }, { retellCallId: input.callId }],
+        },
+        select: { id: true },
+      })
+    : null;
+
   const { eventId, htmlLink } = await createCalendarEvent(business, {
     summary: `${business.name}: ${input.issue}`,
     description: `Customer: ${input.customerName}\nPhone: ${input.customerPhone}\nIssue: ${input.issue}`,
@@ -69,31 +80,51 @@ export async function bookCalendarAppointment(
     end: input.end,
   });
 
-  const booking = await prisma.booking.create({
-    data: {
-      businessId: business.id,
-      callId: input.callId,
-      customerName: input.customerName,
-      customerPhone: normalizePhone(input.customerPhone),
-      address: input.address,
-      issue: input.issue,
-      scheduledAt: new Date(input.start),
-      confirmed: true,
-    },
-  });
+  let booking;
+  try {
+    booking = await prisma.booking.create({
+      data: {
+        businessId: business.id,
+        callId: linkedCall?.id,
+        customerName: input.customerName,
+        customerPhone: normalizePhone(input.customerPhone),
+        address: input.address,
+        issue: input.issue,
+        scheduledAt: new Date(input.start),
+        confirmed: true,
+      },
+    });
+  } catch (error) {
+    try {
+      await deleteCalendarEvent(business, eventId);
+    } catch (cleanupError) {
+      console.error(
+        `Failed to roll back Google event ${eventId} after booking error:`,
+        cleanupError,
+      );
+    }
+    throw error;
+  }
 
+  let smsNotification: "not_requested" | "sent" | "failed" = "not_requested";
   if (business.phoneNumber) {
     const when = formatSlotForSms(
       { start: input.start, end: input.end },
       business.timezone,
     );
 
-    await sendThreadSms({
-      businessId: business.id,
-      fromNumber: business.phoneNumber,
-      toPhone: input.customerPhone,
-      body: `Your appointment with ${business.name} is confirmed for ${when} at ${input.address}. Reply if you need to reschedule.`,
-    });
+    try {
+      await sendThreadSms({
+        businessId: business.id,
+        fromNumber: business.phoneNumber,
+        toPhone: input.customerPhone,
+        body: `Your appointment with ${business.name} is confirmed for ${when} at ${input.address}. Reply if you need to reschedule.`,
+      });
+      smsNotification = "sent";
+    } catch (error) {
+      smsNotification = "failed";
+      console.error("Booking confirmation SMS failed:", error);
+    }
   }
 
   return {
@@ -101,5 +132,6 @@ export async function bookCalendarAppointment(
     calendarEventId: eventId,
     calendarLink: htmlLink,
     scheduledAt: booking.scheduledAt,
+    smsNotification,
   };
 }
