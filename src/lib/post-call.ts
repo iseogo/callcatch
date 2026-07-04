@@ -123,7 +123,11 @@ export async function processCallAnalyzed(
   });
 
   if (business.phoneNumber) {
-    await notifyOwnerPostCall(business, updatedCall, custom, intent, outcome);
+    try {
+      await notifyOwnerPostCall(business, updatedCall, custom, intent, outcome);
+    } catch (error) {
+      console.error("Owner post-call SMS failed:", error);
+    }
   }
 
   if (
